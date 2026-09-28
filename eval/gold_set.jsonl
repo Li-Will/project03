@@ -1,0 +1,80 @@
+{"id": "i-01", "cls": "intent", "text": "免费用户有多少存储容量？", "gold": "faq", "note": "FAQ 原问"}
+{"id": "i-02", "cls": "intent", "text": "怎么升级成会员", "gold": "faq", "note": "alias 问法"}
+{"id": "i-03", "cls": "intent", "text": "免费版和付费版有什么区别？", "gold": "faq", "note": "FAQ 原问"}
+{"id": "i-04", "cls": "intent", "text": "客服电话是多少", "gold": "faq", "note": "边界：问客服渠道≠要人工"}
+{"id": "i-05", "cls": "intent", "text": "会议能录下来吗", "gold": "faq", "note": "疑问句式归 FAQ"}
+{"id": "i-06", "cls": "intent", "text": "麦克风没有声音怎么排查？", "gold": "faq", "note": "FAQ 原问"}
+{"id": "i-07", "cls": "intent", "text": "云盘回收站里的文件能找回吗", "gold": "faq", "note": "疑问句式"}
+{"id": "i-08", "cls": "intent", "text": "分享链接有效期能设置多久", "gold": "faq", "note": "疑问句式"}
+{"id": "i-09", "cls": "intent", "text": "会议纪要怎么生成", "gold": "faq", "note": "疑问句式"}
+{"id": "i-10", "cls": "intent", "text": "云盘支持手机和平板登录吗", "gold": "faq", "note": "疑问句式"}
+{"id": "i-11", "cls": "intent", "text": "会议最多支持多少人参加", "gold": "faq", "note": "疑问句式"}
+{"id": "i-12", "cls": "intent", "text": "自动续费怎么取消", "gold": "faq", "note": "alias 问法"}
+{"id": "i-13", "cls": "intent", "text": "忘记密码怎么重置？", "gold": "faq", "note": "FAQ 原问"}
+{"id": "i-14", "cls": "intent", "text": "免费版开会时间有限制吗", "gold": "faq", "note": "疑问句式"}
+{"id": "i-15", "cls": "intent", "text": "你好，请问怎么开发票", "gold": "faq", "note": "边界：寒暄不吞 FAQ（带问句算 FAQ）"}
+{"id": "i-16", "cls": "intent", "text": "云盘一直上传失败怎么办", "gold": "ticket", "note": "故障词\"一直失败\""}
+{"id": "i-17", "cls": "intent", "text": "会议软件打不开了", "gold": "ticket", "note": "故障词\"打不开\""}
+{"id": "i-18", "cls": "intent", "text": "云盘客户端闪退", "gold": "ticket", "note": "故障词\"闪退\""}
+{"id": "i-19", "cls": "intent", "text": "会议录制按钮点了没反应，卡死了", "gold": "ticket", "note": "故障词\"卡死\""}
+{"id": "i-20", "cls": "intent", "text": "摄像头无法使用", "gold": "ticket", "note": "故障词\"无法使用\""}
+{"id": "i-21", "cls": "intent", "text": "云盘同步一直失败，还没修好", "gold": "ticket", "note": "故障词\"还没修好\""}
+{"id": "i-22", "cls": "intent", "text": "你们这个云盘太差了，我要投诉", "gold": "complaint", "note": "投诉词\"投诉\""}
+{"id": "i-23", "cls": "intent", "text": "客服态度太差，差评", "gold": "complaint", "note": "投诉词\"差评\""}
+{"id": "i-24", "cls": "intent", "text": "退款！你们的服务太坑人了", "gold": "complaint", "note": "投诉词\"坑人\""}
+{"id": "i-25", "cls": "intent", "text": "我要转人工", "gold": "need_human", "note": "人工词\"转人工\""}
+{"id": "i-26", "cls": "intent", "text": "别用机器人回答，我要真人来", "gold": "need_human", "note": "人工词\"真人来\""}
+{"id": "i-27", "cls": "intent", "text": "叫客服主管来，人工处理", "gold": "need_human", "note": "人工词\"人工处理\""}
+{"id": "i-28", "cls": "intent", "text": "谢谢，辛苦了", "gold": "chat", "note": "纯寒暄"}
+{"id": "i-29", "cls": "intent", "text": "在吗", "gold": "chat", "note": "纯寒暄"}
+{"id": "i-30", "cls": "intent", "text": "早上好", "gold": "chat", "note": "纯寒暄"}
+{"id": "f-01", "cls": "faq", "text": "免费用户有多少存储容量？", "gold_id": "cd-01", "direct": true, "note": "原问直答"}
+{"id": "f-02", "cls": "faq", "text": "免费版和付费版有什么区别？", "gold_id": "cd-03", "direct": true, "note": "原问直答"}
+{"id": "f-03", "cls": "faq", "text": "上传文件失败是什么原因？", "gold_id": "cd-07", "direct": true, "note": "原问直答"}
+{"id": "f-04", "cls": "faq", "text": "下载速度慢怎么处理？", "gold_id": "cd-10", "direct": true, "note": "原问直答"}
+{"id": "f-05", "cls": "faq", "text": "电脑和手机上的文件不同步怎么办？", "gold_id": "cd-13", "direct": true, "note": "原问直答"}
+{"id": "f-06", "cls": "faq", "text": "怎么暂停同步？", "gold_id": "cd-16", "direct": true, "note": "原问直答"}
+{"id": "f-07", "cls": "faq", "text": "分享文件夹如何设置有效期？", "gold_id": "cd-19", "direct": true, "note": "原问直答"}
+{"id": "f-08", "cls": "faq", "text": "怎么给分享链接设置访问密码？", "gold_id": "cd-22", "direct": true, "note": "原问直答"}
+{"id": "f-09", "cls": "faq", "text": "文件删除了，回收站在哪里，能找回几天内的？", "gold_id": "cd-25", "direct": true, "note": "原问直答"}
+{"id": "f-10", "cls": "faq", "text": "自动续费怎么取消？", "gold_id": "cd-28", "direct": true, "note": "原问直答"}
+{"id": "f-11", "cls": "faq", "text": "收不到验证码怎么办", "gold_id": "cd-31", "direct": true, "note": "原问含\"登录失败\"触发故障词，换无冲突问法（问法等价）"}
+{"id": "f-12", "cls": "faq", "text": "如何注销账号？", "gold_id": "cd-34", "direct": true, "note": "原问直答"}
+{"id": "f-13", "cls": "faq", "text": "怎么用会议号加入会议？", "gold_id": "mn-02", "direct": true, "note": "原问直答"}
+{"id": "f-14", "cls": "faq", "text": "麦克风没有声音怎么排查？", "gold_id": "mn-07", "direct": true, "note": "原问直答"}
+{"id": "f-15", "cls": "faq", "text": "会议纪要/转写功能怎么做？", "gold_id": "mn-38", "direct": true, "note": "原问直答"}
+{"id": "f-16", "cls": "faq", "text": "免费空间是几个G", "gold_id": "cd-01", "direct": true, "note": "alias 问法等价"}
+{"id": "f-17", "cls": "faq", "text": "传文件太慢了", "gold_id": "cd-06", "direct": true, "note": "alias 问法等价"}
+{"id": "f-18", "cls": "faq", "text": "整个文件夹怎么传", "gold_id": "cd-08", "direct": true, "note": "alias 问法等价"}
+{"id": "f-19", "cls": "faq", "text": "怎么开启双重认证", "gold_id": "cd-23", "direct": true, "note": "alias 问法等价"}
+{"id": "f-20", "cls": "faq", "text": "开会卡顿怎么办", "gold_id": "mn-04", "direct": true, "note": "干净问法直答 mn-04（0.76）；原问法\"视频一直转圈\"检索误配（见报告已知局限）"}
+{"id": "f-21", "cls": "faq", "text": "怎么把会议存下来", "gold_id": "mn-13", "direct": true, "note": "alias 问法等价"}
+{"id": "f-22", "cls": "faq", "text": "录完的视频在哪", "gold_id": "mn-14", "direct": true, "note": "alias 问法等价"}
+{"id": "f-23", "cls": "faq", "text": "录制空间多大", "gold_id": "mn-15", "direct": true, "note": "alias 问法等价"}
+{"id": "f-24", "cls": "faq", "text": "报销需要发票", "gold_id": "cd-29", "direct": true, "note": "alias 问法等价"}
+{"id": "f-25", "cls": "faq", "text": "误删的文件还能找回来吗", "gold_id": "cd-17", "direct": true, "note": "alias 问法等价"}
+{"id": "d-01", "cls": "diagnose", "text": "云盘里的照片好像被弄丢了，你们必须给个说法", "category": "云盘服务", "priority": "P1", "escalate": true, "expect_id": null, "note": "照片丢失=数据丢失事件→P1 强制转人工（\"丢了\"命中 P1 词表）"}
+{"id": "d-02", "cls": "diagnose", "text": "账户好像被盗了，紧急冻结", "category": "综合", "priority": "P1", "escalate": true, "expect_id": null, "note": "紧急→P1 强制转人工"}
+{"id": "d-03", "cls": "diagnose", "text": "我遇到一个问题，但说不清楚是什么情况，你们能不能帮我看下", "category": "综合", "priority": "P3", "escalate": true, "expect_id": null, "note": "模糊描述→检索低置信转人工"}
+{"id": "d-04", "cls": "diagnose", "text": "用你们的产品出了很严重的事，我要找负责人", "category": "综合", "priority": "P3", "escalate": true, "expect_id": null, "note": "严重事件+找负责人，检索无据"}
+{"id": "d-05", "cls": "diagnose", "text": "云盘容量满了，上传一直失败", "category": "云盘服务", "priority": "P3", "escalate": false, "expect_id": "cd-04", "note": "容量满→清理方案"}
+{"id": "d-06", "cls": "diagnose", "text": "会议录制功能报错了，一直打不开", "category": "会议支持", "priority": "P3", "escalate": false, "expect_id": "mn-13", "note": "录制故障→录制 FAQ"}
+{"id": "d-07", "cls": "diagnose", "text": "上传文件传一半就断了，能接着传吗", "category": "云盘服务", "priority": "P3", "escalate": false, "expect_id": "cd-11", "note": "断点续传"}
+{"id": "d-08", "cls": "diagnose", "text": "摄像头没有画面怎么设置", "category": "会议支持", "priority": "P3", "escalate": false, "expect_id": "mn-08", "note": "摄像头故障"}
+{"id": "d-09", "cls": "diagnose", "text": "云盘两个设备文件对不上", "category": "云盘服务", "priority": "P3", "escalate": false, "expect_id": "cd-13", "note": "多端不同步"}
+{"id": "d-10", "cls": "diagnose", "text": "会议有很重的回声", "category": "会议支持", "priority": "P3", "escalate": false, "expect_id": "mn-09", "note": "回声排查"}
+{"id": "d-11", "cls": "diagnose", "text": "分享链接被别人登了好害怕，怎么关掉", "category": "云盘服务", "priority": "P3", "escalate": false, "expect_id": "cd-21", "note": "取消分享"}
+{"id": "d-12", "cls": "diagnose", "text": "登录时验证码一直不来", "category": "综合", "priority": "P3", "escalate": false, "expect_id": "cd-31", "note": "验证码（无产品词→综合）"}
+{"id": "d-13", "cls": "diagnose", "text": "会议免费版到45分钟会不会断", "category": "会议支持", "priority": "P3", "escalate": false, "expect_id": "mn-27", "note": "免费版限制"}
+{"id": "d-14", "cls": "diagnose", "text": "云盘同步的文件夹误删了", "category": "云盘服务", "priority": "P3", "escalate": false, "expect_id": "cd-17", "note": "误删恢复"}
+{"id": "d-15", "cls": "diagnose", "text": "开会时听不到别人说话", "category": "会议支持", "priority": "P3", "escalate": false, "expect_id": "mn-11", "note": "语义目标 mn-11（音频输出切换）；live 检索 top1 实际是 mn-03 进不去会议——embedding 弱同义局限，记入报告已知局限"}
+{"id": "e-01", "cls": "escalate", "text": "我要转人工客服", "escalate": true, "note": "人工诉求信号", "expect_id": null}
+{"id": "e-02", "cls": "escalate", "text": "我的云盘数据全部丢了，怎么办", "escalate": true, "note": "数据丢失重大事件（无\"数据丢失\"整词，规则盲区考察）", "expect_id": null}
+{"id": "e-03", "cls": "escalate", "text": "别用机器人，叫真人来", "escalate": true, "note": "真人诉求", "expect_id": null}
+{"id": "e-04", "cls": "escalate", "text": "会议被陌生人进来了，怎么办，很紧急", "escalate": true, "note": "紧急→P1", "expect_id": null}
+{"id": "e-05", "cls": "escalate", "text": "我的账号被扣了两次钱", "escalate": true, "note": "扣款→P1", "expect_id": null}
+{"id": "e-06", "cls": "escalate", "text": "云盘上传速度太慢怎么解决", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "cd-06"}
+{"id": "e-07", "cls": "escalate", "text": "会议录制完的文件在哪里", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "mn-14"}
+{"id": "e-08", "cls": "escalate", "text": "怎么给分享链接设置密码", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "cd-22"}
+{"id": "e-09", "cls": "escalate", "text": "开会时怎么共享屏幕", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "mn-18"}
+{"id": "e-10", "cls": "escalate", "text": "云盘文件怎么批量下载", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "cd-37"}

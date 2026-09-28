@@ -35,6 +35,6 @@ def triage(
         return TriageDecision(True, f"证据置信度 {conf:.3f} 低于阈值 {EVIDENCE_CONF_THRESHOLD}")
     if priority == "P1":
         return TriageDecision(True, "P1 事件（资金/账号/数据安全）需人工介入确认")
-    if any(k in text for k in ("人工", "真人", "客服来")):
-        return TriageDecision(True, "用户文本出现人工诉求信号")
+    if any(k in text for k in ("人工", "真人", "客服来", "负责人", "说不清楚", "不知道怎么说")):
+        return TriageDecision(True, "用户文本出现人工诉求/表达模糊信号")
     return TriageDecision(False, "证据充足，可生成方案直接回复")

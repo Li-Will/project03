@@ -51,13 +51,16 @@ def _db_key() -> str:
 def get_checkpointer() -> SqliteSaver:
     """惰性缓存：连接保持（SqliteSaver 要求连接存活）。
 
-    checkpoint 路径跟随业务库（engine.url.database）：
-    - 生产：data/tickets.db → data/checkpoints.db；
-    - 测试：configure(tmp_path/xxx.db) 后自动隔离（key 不同 = 独立 checkpoint 文件）。
+    checkpoint 文件按业务库 stem 派生（完全隔离，杜绝跨库/跨轮次撞车）：
+    - 生产：data/tickets.db → data/checkpoints_tickets.db；
+    - 测试/评测：configure(tmp_path/xxx.db) 后 → checkpoints_xxx.db，天然隔离。
+    （教训：固定同名 checkpoints.db + thread_id 每进程自增 → 多轮跑撞车，
+      operator.add 的 evidence 会从旧 checkpoint 恢复累积。）
     """
     key = _db_key()
     if key not in _checkpointers:
-        path = Path(key).parent / "checkpoints.db"
+        db_path = Path(key)
+        path = db_path.with_name(f"checkpoints_{db_path.stem}.db")
         path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(path), check_same_thread=False)
         _checkpointers[key] = SqliteSaver(conn)
@@ -155,9 +158,14 @@ def write_solution_node(state: GraphState) -> dict:
 
 
 def triage_node(state: GraphState) -> dict:
-    """Escalation Triage：该转人工 / 直接回复。"""
+    """Escalation Triage：该转人工 / 直接回复。
+
+    证据置信度只取当轮 faq 检索（source=faq）——历史工单只是回复素材，
+    不能撑起\"证据充足\"：\"该转不转是事故\"，弱先验不放大行。
+    """
     evidence = state.get("evidence") or []
-    top_conf = evidence[0]["score"] if evidence else None
+    faq_scores = [e["score"] for e in evidence if e.get("source") == "faq"]
+    top_conf = max(faq_scores) if faq_scores else None
     decision = triage(
         evidence_top_score=top_conf,
         priority=state.get("priority", "P3"),
