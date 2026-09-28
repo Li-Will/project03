@@ -45,6 +45,7 @@ class Ticket(Base):
     priority = Column(String(8), default="P3", nullable=False)  # P1/P2/P3
     state = Column(String(16), default="new", nullable=False)   # TicketState.value
     sla_deadline = Column(DateTime, nullable=True)    # M2 SLA 用
+    graph_thread_id = Column(String(32), nullable=True)  # LangGraph checkpoint 线程 id（resume 用）
     assignee = Column(String(16), default="agent", nullable=False)  # agent | human
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)

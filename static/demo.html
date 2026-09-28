@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ticket Agent · 智能客服工单演示</title>
+<style>
+  :root { --bg:#0f1420; --panel:#161d2e; --line:#26314a; --txt:#dbe4f4; --dim:#8b98b7;
+          --ok:#39d98a; --warn:#ffb454; --err:#ff6b6b; --accent:#4f8cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Segoe UI","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--txt); }
+  header { display:flex; align-items:baseline; gap:12px; padding:14px 24px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:18px; margin:0; }
+  header span { color:var(--dim); font-size:12px; }
+  .wrap { display:grid; grid-template-columns:1fr 320px; gap:16px; padding:16px 24px; min-height:calc(100vh - 60px); }
+  .chat { display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; min-height:420px; }
+  .msg { max-width:78%; padding:10px 14px; border-radius:12px; white-space:pre-wrap; line-height:1.5; font-size:14px; }
+  .msg.user { align-self:flex-end; background:#23407a; }
+  .msg.agent { align-self:flex-start; background:#1d2740; }
+  .msg.sys { align-self:center; color:var(--dim); font-size:12px; background:transparent; }
+  .msg .meta { font-size:11px; color:var(--dim); margin-bottom:4px; }
+  .msg .cite { color:var(--accent); cursor:pointer; text-decoration:underline; }
+  .inputbar { display:flex; gap:8px; padding:12px; border-top:1px solid var(--line); }
+  input[type=text] { flex:1; background:#0d1322; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:10px 14px; font-size:14px; outline:none; }
+  button { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:10px 18px; cursor:pointer; font-size:14px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .panel { display:flex; flex-direction:column; gap:12px; font-size:13px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .card h3 { margin:0 0 10px; font-size:14px; color:var(--dim); font-weight:600; }
+  .kv { display:flex; justify-content:space-between; padding:3px 0; border-bottom:1px dashed #202a42; }
+  .kv:last-child { border-bottom:none; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:10px; background:#26314a; }
+  .tag.ok { background:#12331f; color:var(--ok); }
+  .tag.warn { background:#3a2c14; color:var(--warn); }
+  .audit { font-family:ui-monospace,Consolas,monospace; font-size:11px; color:var(--dim); }
+  .audit div { padding:2px 0; }
+  textarea { width:100%; min-height:60px; background:#0d1322; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; font-size:13px; resize:vertical; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🎫 Ticket Agent</h1>
+  <span>企业客服多 Agent 工单系统 · M2 演示（LangGraph 图 + 转人工 interrupt/resume + SLA）</span>
+</header>
+<div class="wrap">
+  <div class="chat">
+    <div id="log"></div>
+    <div class="inputbar">
+      <input type="text" id="q" placeholder="试试：「免费空间多大？」「会议打不开了，一直报错卡死！」「我要转人工」" autofocus>
+      <button id="send">发送</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="card">
+      <h3>当前工单（自动跟踪最近一张）</h3>
+      <div id="ticket-info" class="kv"><span>—</span></div>
+      <div class="audit" id="audit"></div>
+    </div>
+    <div class="card hidden" id="human-card">
+      <h3>🙋 人工接管模拟（工单已转人工）</h3>
+      <textarea id="human-text" placeholder="以人工坐席身份回复客户…"></textarea>
+      <div style="margin-top:8px"><button id="human-send">作为人工回复（resume）</button></div>
+    </div>
+    <div class="card">
+      <h3>提示</h3>
+      <div style="color:var(--dim);line-height:1.6">
+        FAQ 直答不建单；报障/疑难走 LangGraph 诊断；
+        <b style="color:var(--warn)">证据不足自动转人工</b>（interrupt 挂起），
+        人工回复后原路恢复（resume）。
+        <br><br>接口：<code>/api/v1/chat</code> · <code>/chat/stream(SSE)</code> ·
+        <code>/tickets/{id}</code> · <code>/human-reply</code> · <code>/ack</code> · <code>/admin/escalations</code>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const logBox = $('#log');
+let lastTicketId = null;
+
+function addMsg(kind, html, meta='') {
+  const d = document.createElement('div');
+  d.className = 'msg ' + kind;
+  if (meta) d.innerHTML = `<div class="meta">${meta}</div>` + html;
+  else d.innerHTML = html;
+  logBox.appendChild(d); logBox.scrollTop = logBox.scrollHeight;
+  return d;
+}
+function esc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function refreshTicket(tid) {
+  if (!tid) return;
+  lastTicketId = tid;
+  try {
+    const d = await (await fetch(`/api/v1/tickets/${tid}`)).json();
+    $('#ticket-info').innerHTML =
+      `<span>#${d.id} · ${esc(d.category)} · <span class="tag ${d.state==='resolved'||d.state==='closed'?'ok':d.state==='escalated'?'warn':''}">${esc(d.state)}</span></span>` +
+      `<span>${esc(d.priority)} / ${esc(d.assignee)}</span>`;
+    $('#audit').innerHTML = d.events.map(e =>
+      `<div>${e.at.slice(11,19)}  ${esc(e.from||'—')} → ${esc(e.to)}  <span style="color:#5b6b8f">${esc(e.actor)} · ${esc(e.reason)}</span></div>`
+    ).join('');
+    const escCard = d.state === 'escalated';
+    $('#human-card').classList.toggle('hidden', !escCard);
+    if (escCard) $('#human-card').dataset.tid = tid;
+  } catch(e) { /* 工单可能尚未落库 */ }
+}
+
+function send(text) {
+  if (!text) return;
+  addMsg('user', esc(text));
+  $('#q').value = '';
+  const es = new EventSource(`/api/v1/chat/stream?text=${encodeURIComponent(text)}&customer_name=演示用户`);
+  let msgEl = null;
+  es.addEventListener('start', () => {});
+  es.addEventListener('node', ev => {
+    const d = JSON.parse(ev.data);
+    if (!msgEl) msgEl = addMsg('agent', '');
+    if (d.node === 'diagnose') {
+      const step = (d.diagnosis_steps||[]).map(s=>`步${s.step}·${s.strategy}(top ${s.top_score})`).join(' → ') || '检索中…';
+      msgEl.textContent = `🔍 诊断：${step}`;
+    }
+    if (d.evidence && d.evidence.length) msgEl.textContent += `\n引用候选：${d.evidence.join(', ')}`;
+  });
+  es.addEventListener('done', ev => {
+    es.close();
+    const d = JSON.parse(ev.data);
+    let html = '';
+    if (d.type === 'faq') {
+      const cites = (d.citations||[]).map(c=>`<span class="cite" title="${esc(c.question)}">[${c.n}]</span>`).join(' ');
+      html = esc(d.reply) + (cites ? `<br>📎 ${cites}` : '');
+    } else if (d.type === 'ticket') {
+      html = esc(d.reply) + (d.ticket_id ? `<br>📋 工单 #${d.ticket_id}（${d.state}）` : '');
+    } else if (d.type === 'escalated') {
+      html = `<span style="color:var(--warn)">⏸ 转人工</span> ${esc(d.reply)}<br>工单 #${d.ticket_id} 已挂起，等待人工回复。`;
+    } else {
+      html = esc(d.reply || JSON.stringify(d));
+    }
+    addMsg('agent', html, `type=${d.type} · confidence=${d.confidence ?? '-'}`);
+    refreshTicket(d.ticket_id);
+  });
+  es.addEventListener('error', () => { es.close(); addMsg('sys', '（连接中断，请重试）'); });
+}
+
+$('#send').onclick = () => send($('#q').value.trim());
+$('#q').addEventListener('keydown', e => { if (e.key === 'Enter') send($('#q').value.trim()); });
+
+$('#human-send').onclick = async () => {
+  const tid = $('#human-card').dataset.tid;
+  const content = $('#human-text').value.trim();
+  if (!tid || !content) return;
+  const r = await fetch(`/api/v1/tickets/${tid}/human-reply`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({content, actor:'human'})
+  }).then(r=>r.json());
+  addMsg('agent', `🙋 人工坐席：${esc(content)}`, '人工接管 · resume 图恢复');
+  $('#human-text').value = '';
+  $('#human-card').classList.add('hidden');
+  refreshTicket(tid);
+};
+
+addMsg('sys', '演示页已就绪。发送消息体验：FAQ 直答 / 报障诊断 / 低置信自动转人工 → 面板出现“人工接管模拟”。');
+</script>
+</body>
+</html>

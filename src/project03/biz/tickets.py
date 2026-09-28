@@ -165,3 +165,31 @@ def prioritize_ticket(text: str) -> str:
     if ("急" in text) or ("马上" in text):
         return "P2"
     return "P3"
+
+
+def resolved_solutions(session: Session, category: str, limit: int = 3) -> list[dict]:
+    """历史已解决工单的最终回复（source=diagnosis/human），作诊断补充证据。
+
+    只取 state ∈ {resolved, closed} 且同分类工单的最近一条坐席/诊断消息；
+    若工单无坐席消息则跳过（证据必须可归因，不拿空壳凑数）。
+    """
+    rows = session.execute(
+        select(Ticket.id, Ticket.category).where(
+            Ticket.state.in_(["resolved", "closed"])
+        ).order_by(Ticket.id.desc()).limit(50)
+    ).all()
+    out: list[dict] = []
+    for ticket_id, cat in rows:
+        if cat != category:
+            continue
+        msg = session.execute(
+            select(Message.content, Message.source).where(
+                Message.ticket_id == ticket_id,
+                Message.sender == "agent",
+            ).order_by(Message.id.desc()).limit(1)
+        ).first()
+        if msg and msg.content:
+            out.append({"ticket_id": ticket_id, "content": msg.content, "source": msg.source})
+        if len(out) >= limit:
+            break
+    return out
