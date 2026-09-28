@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# 虚拟环境与依赖
+.venv/
+
+# 运行产物
+data/
+*.db
+*.sqlite3
+eval/results/
+eval/snapshots/
+
+# 环境变量（密钥不入库）
+.env
+
+# 系统
+.DS_Store
