@@ -67,7 +67,10 @@ class Settings(BaseSettings):
     # 空值 = 不启用鉴权（本地演示/评测/测试默认路径，保持离线确定性）
     api_keys: str = ""                  # 形如 "key1:tenantA:agent,key2:tenantB:agent2"
     default_tenant: str = "default"     # 无鉴权模式下的租户归属
-    require_auth: bool = False          # True = 所有业务端点必须带 X-API-Key
+    # True = **坐席/管理端点**（human-reply / admin/*）必须带有效 X-API-Key；
+    # 用户侧入口（/chat、/ack）不强制 —— 终端用户没有坐席凭据，
+    # 匿名请求归默认租户，天然看不到具名租户的数据（见 api/auth.resolve_principal）。
+    require_auth: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore"

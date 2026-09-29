@@ -37,7 +37,8 @@ def set_deadline(session, ticket: Ticket) -> Ticket:
     return ticket
 
 
-def scan_sla(session, now: datetime | None = None, category: str | None = None) -> dict:
+def scan_sla(session, now: datetime | None = None, category: str | None = None,
+             tenant_id: str | None = None) -> dict:
     """扫描【仍在处理中】的工单：超时 → 升级（ESCALATED+审计）；临近 → 提醒消息。
 
     active 状态：new / in_triage / processing / pending_user —— 已解决(resolved)不属于
@@ -48,6 +49,8 @@ def scan_sla(session, now: datetime | None = None, category: str | None = None) 
     q = select(Ticket).where(Ticket.state.in_(["new", "in_triage", "processing", "pending_user"]))
     if category:
         q = q.where(Ticket.category == category)
+    if tenant_id is not None:
+        q = q.where(Ticket.tenant_id == tenant_id)
     rows = session.scalars(q).all()
     escalated: list[int] = []
     warned: list[int] = []
@@ -67,12 +70,12 @@ def scan_sla(session, now: datetime | None = None, category: str | None = None) 
     return {"escalated": escalated, "warned": warned}
 
 
-def list_escalations(session, limit: int = 20) -> list[dict]:
-    """管理面队列：ESCALATED 工单（SLA 超时 + 转人工），按死限升序。"""
-    rows = session.scalars(
-        select(Ticket).where(Ticket.state == "escalated")
-        .order_by(Ticket.sla_deadline.asc().nulls_last()).limit(limit)
-    ).all()
+def list_escalations(session, limit: int = 20, tenant_id: str | None = None) -> list[dict]:
+    """管理面队列：ESCALATED 工单（SLA 超时 + 转人工），按死限升序；可按租户过滤。"""
+    q = select(Ticket).where(Ticket.state == "escalated")
+    if tenant_id is not None:
+        q = q.where(Ticket.tenant_id == tenant_id)
+    rows = session.scalars(q.order_by(Ticket.sla_deadline.asc().nulls_last()).limit(limit)).all()
     return [
         {"ticket_id": t.id, "category": t.category, "priority": t.priority,
          "created_at": t.created_at.isoformat(),

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from project03.biz.states import TicketState, validate_transition
-from project03.db.models import Customer, Message, Ticket, TicketEvent, utcnow
+from project03.db.models import DEFAULT_TENANT, Customer, Message, Ticket, TicketEvent, utcnow
 
 
 class TicketNotFoundError(KeyError):
@@ -20,12 +20,15 @@ class TicketNotFoundError(KeyError):
         super().__init__(f"工单不存在: {ticket_id}")
 
 
-def get_or_create_customer(session: Session, name: str) -> Customer:
+def get_or_create_customer(session: Session, name: str, tenant_id: str = DEFAULT_TENANT) -> Customer:
+    """客户名在**租户内**唯一（同名客户可属于不同租户）。"""
     name = name.strip() or "访客"
-    row = session.scalar(select(Customer).where(Customer.name == name))
+    row = session.scalar(
+        select(Customer).where(Customer.tenant_id == tenant_id, Customer.name == name)
+    )
     if row:
         return row
-    cust = Customer(name=name, tier="普通")
+    cust = Customer(tenant_id=tenant_id, name=name, tier="普通")
     session.add(cust)
     session.flush()
     return cust
@@ -58,9 +61,11 @@ def create_ticket(
     category: str = "",
     priority: str = "P3",
     reason: str = "创建工单",
+    tenant_id: str = DEFAULT_TENANT,
 ) -> Ticket:
-    """新单落 NEW 状态 + 首条客户消息 + create 审计事件。"""
+    """新单落 NEW 状态 + 首条客户消息 + create 审计事件（带租户归属）。"""
     ticket = Ticket(
+        tenant_id=tenant_id,
         customer_id=customer_id,
         intent=intent,
         category=category,
@@ -108,16 +113,19 @@ def add_message(
     return msg
 
 
-def get_ticket(session: Session, ticket_id: int) -> Ticket:
+def get_ticket(session: Session, ticket_id: int, tenant_id: str | None = None) -> Ticket:
+    """取工单；给 tenant_id 时做租户校验 —— 跨租户一律 404（不泄露存在性）。"""
     ticket = session.get(Ticket, ticket_id)
     if ticket is None:
+        raise TicketNotFoundError(ticket_id)
+    if tenant_id is not None and ticket.tenant_id != tenant_id:
         raise TicketNotFoundError(ticket_id)
     return ticket
 
 
-def get_ticket_history(session: Session, ticket_id: int) -> dict:
+def get_ticket_history(session: Session, ticket_id: int, tenant_id: str | None = None) -> dict:
     """工单全景：基本信息 + 消息流 + 状态迁移审计（API 详情/演示页用）。"""
-    ticket = get_ticket(session, ticket_id)
+    ticket = get_ticket(session, ticket_id, tenant_id=tenant_id)
     messages = session.scalars(
         select(Message).where(Message.ticket_id == ticket_id).order_by(Message.id)
     ).all()
@@ -167,17 +175,17 @@ def prioritize_ticket(text: str) -> str:
     return "P3"
 
 
-def resolved_solutions(session: Session, category: str, limit: int = 3) -> list[dict]:
+def resolved_solutions(session: Session, category: str, limit: int = 3,
+                       tenant_id: str | None = None) -> list[dict]:
     """历史已解决工单的最终回复（source=diagnosis/human），作诊断补充证据。
 
     只取 state ∈ {resolved, closed} 且同分类工单的最近一条坐席/诊断消息；
     若工单无坐席消息则跳过（证据必须可归因，不拿空壳凑数）。
     """
-    rows = session.execute(
-        select(Ticket.id, Ticket.category).where(
-            Ticket.state.in_(["resolved", "closed"])
-        ).order_by(Ticket.id.desc()).limit(50)
-    ).all()
+    q = select(Ticket.id, Ticket.category).where(Ticket.state.in_(["resolved", "closed"]))
+    if tenant_id is not None:
+        q = q.where(Ticket.tenant_id == tenant_id)   # 不把别的租户的历史方案当证据
+    rows = session.execute(q.order_by(Ticket.id.desc()).limit(50)).all()
     out: list[dict] = []
     for ticket_id, cat in rows:
         if cat != category:

@@ -30,6 +30,7 @@ class DiagnosisStep(TypedDict):
 class GraphState(TypedDict, total=False):
     text: str                    # 用户原话
     customer_name: str
+    tenant: str                  # 租户（建单/查询归属，P0-3）
     ticket_id: int
     category: str
     priority: str

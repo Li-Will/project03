@@ -33,6 +33,7 @@ from project03.biz.tickets import (
     update_state,
 )
 from project03.db import models as db
+from project03.db.models import DEFAULT_TENANT
 from project03.gql.state import GraphState
 
 MAX_DIAGNOSE_EVIDENCE = 3     # 方案引用上限（引用编号对应）
@@ -72,9 +73,11 @@ def get_checkpointer() -> SqliteSaver:
 def build_ticket_node(state: GraphState, config: RunnableConfig) -> dict:
     """建单：NEW 落库 + 首条消息 + create 审计 + graph_thread_id 回写（resume 用）。"""
     thread_id = (config or {}).get("configurable", {}).get("thread_id", "")
+    tenant = state.get("tenant") or DEFAULT_TENANT
     with db.session_scope() as s:
-        cust = get_or_create_customer(s, state["customer_name"])
-        ticket = create_ticket(s, cust.id, state["text"], intent="ticket", reason="LangGraph 自动建单（诊断流程）")
+        cust = get_or_create_customer(s, state["customer_name"], tenant_id=tenant)
+        ticket = create_ticket(s, cust.id, state["text"], intent="ticket",
+                               reason="LangGraph 自动建单（诊断流程）", tenant_id=tenant)
         if thread_id:
             t = s.get(db.Ticket, ticket.id)
             t.graph_thread_id = thread_id
@@ -126,7 +129,10 @@ def diagnose_node(state: GraphState) -> dict:
 
     # step3: 历史已解决工单补充（同分类下人工/AI 处理过的真实结论）
     with db.session_scope() as s:
-        history = resolved_solutions(s, category, limit=HISTORY_LIMIT) if category else []
+        history = (
+            resolved_solutions(s, category, limit=HISTORY_LIMIT, tenant_id=state.get("tenant") or DEFAULT_TENANT)
+            if category else []
+        )
     for h in history[:HISTORY_LIMIT]:
         collected.append({"id": f"t{ h['ticket_id'] }", "source": "history", "question": h.get("question", ""), "answer": h["content"], "score": 0.55})
     if history:
@@ -255,12 +261,12 @@ def get_graph():
     return _compiled_cache[key]
 
 
-def run_ticket_graph(text: str, customer_name: str = "访客") -> dict:
+def run_ticket_graph(text: str, customer_name: str = "访客", tenant: str = DEFAULT_TENANT) -> dict:
     """同步跑图（不遇 interrupt 则一路到 END）。返回 thread_id + 最终状态。"""
-    return _run_first_pass(text, customer_name)
+    return _run_first_pass(text, customer_name, tenant)
 
 
-def stream_ticket_graph(text: str, customer_name: str = "访客"):
+def stream_ticket_graph(text: str, customer_name: str = "访客", tenant: str = DEFAULT_TENANT):
     """流式跑图：逐节点 yield (thread_id, node_name, update)（SSE 用）。
 
     遇 interrupt 时流自然结束（checkpoint 已保存），由 /human-reply resume。
@@ -270,7 +276,7 @@ def stream_ticket_graph(text: str, customer_name: str = "访客"):
     g = get_graph()
     with _GRAPH_LOCK:
         for chunk in g.stream(
-            {"text": text, "customer_name": customer_name},
+            {"text": text, "customer_name": customer_name, "tenant": tenant},
             config,
             stream_mode="updates",
         ):
@@ -290,12 +296,12 @@ def _next_thread_id() -> str:
         return f"t{ _TICKET_SEQ:06d}"
 
 
-def _run_first_pass(text: str, customer_name: str) -> dict:
+def _run_first_pass(text: str, customer_name: str, tenant: str = DEFAULT_TENANT) -> dict:
     tid = _next_thread_id()
     config = {"configurable": {"thread_id": tid}}
     g = get_graph()
     with _GRAPH_LOCK:
-        result = g.invoke({"text": text, "customer_name": customer_name}, config)
+        result = g.invoke({"text": text, "customer_name": customer_name, "tenant": tenant}, config)
     return {"thread_id": tid, "result": result}
 
 
