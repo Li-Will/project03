@@ -33,11 +33,25 @@ jobs:
       - name: 按 lock 安装依赖
         run: uv sync --frozen --dev
 
-      - name: 单元测试（53 用例，全部离线：fake 检索器 + 临时库）
+      - name: 单元测试（全量离线：fake 检索器 + 临时库）
         run: uv run pytest -q
 
-      - name: 评测链路冒烟（mock 80 条，离线确定性）
-        run: uv run python eval/run_eval.py --mode mock
+      - name: 评测链路冒烟（mock 99 条，离线确定性 + 数字护栏）
+        run: |
+          set -euo pipefail
+          uv run python eval/run_eval.py --mode mock | tee /tmp/mock_eval.txt
+          # 数字护栏：gold set 条数与关键指标必须与代码一致
+          # （防止"改了评测集忘了改标签/指标静默失效"这类没人发现的漂移）
+          python - <<'PY'
+          import re
+          txt = open("/tmp/mock_eval.txt", encoding="utf-8").read()
+          n = re.search(r"n=(\d+)", txt)
+          assert n and n.group(1) == "99", f"gold set 条数异常：{txt[:200]}"
+          for key in ("intent_acc=1.000", "faq_resolved=1.000", "neg_blocked=1.000",
+                      "cite_hit=1.000", "esc_f1=1.0000"):
+              assert key in txt, f"mock 指标异常，缺少 {key}"
+          print("mock 护栏通过：99 条 + 五项指标全 1.000")
+          PY
 
       - name: 上传评测产物
         if: always()
@@ -82,6 +96,8 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8000/api/v1/chat \
             -H 'Content-Type: application/json' -d '{"text":"你好"}'
           echo
-          echo "--- 非 root 用户 ---"
-          docker exec smoke id -un
+          echo "--- 非 root 用户（必须不是 root）---"
+          who=$(docker exec smoke id -un)
+          echo "$who"
+          if [ "$who" = "root" ]; then echo "容器以 root 运行，不合规"; docker rm -f smoke; exit 1; fi
           docker rm -f smoke
