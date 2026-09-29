@@ -237,19 +237,21 @@ def ticket_detail(ticket_id: int, principal: Principal = Depends(resolve_princip
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@app.post("/api/v1/tickets/{ticket_id}/human-reply")
-def human_reply(ticket_id: int, req: HumanReplyRequest, principal: Principal = Depends(require_agent)):
-    """人工接管端点：有挂起的 LangGraph 诊断 → resume 原路恢复；否则快速路径。
+def human_reply_impl(ticket_id: int, req: "HumanReplyRequest", actor: str,
+                     tenant: str = db.DEFAULT_TENANT) -> dict:
+    """人工接管的**业务实现**：端点与 `scripts/demo_cli.py` 共用同一段逻辑。
 
-    - **鉴权**：坐席端点，REQUIRE_AUTH=true 时必须带有效 X-API-Key；
-    - **身份**：actor 取凭据（principal.actor），请求体里的 actor 一律忽略；
-    - **租户**：跨租户工单 404；
-    - 终态工单拒绝回复（状态机红线兜底）。
+    为什么单独抽一个函数：端点参数用 `Depends(...)` 注入身份，**直接调用端点函数拿到的是
+    Depends 对象而不是 Principal**（demo_cli 就因此挂过：`'Depends' object has no attribute
+    'actor'`）。所以凡是会被脚本 / 定时任务 / 评测直接调用的入口，都要有一个不依赖框架注入的
+    实现函数——顺带也让这段逻辑可被单测直接覆盖。
+
+    不变量：actor 由调用方从**凭据**传入（端点传 principal.actor），绝不从请求体取；
+    跨租户或不存在 → 404（不泄露存在性）；终态工单 → 422。
     """
-    actor = principal.actor
     with db.session_scope() as s:
         try:
-            history = get_ticket_history(s, ticket_id, tenant_id=principal.tenant)
+            history = get_ticket_history(s, ticket_id, tenant_id=tenant)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         state = history["state"]
@@ -266,20 +268,34 @@ def human_reply(ticket_id: int, req: HumanReplyRequest, principal: Principal = D
                 return {"ok": True, "ticket_id": ticket_id, "state": get_ticket(s, ticket_id).state}
 
     with db.session_scope() as s:  # 无图路径：加消息 + 受理中/转人工 → PENDING_USER
-        get_ticket(s, ticket_id, tenant_id=principal.tenant)   # 租户复核（防御性）
+        get_ticket(s, ticket_id, tenant_id=tenant)   # 租户复核（防御性）
         add_message(s, ticket_id, "agent", req.content, "human")
         if state in ("escalated", "in_triage", "processing", "new"):
             update_state(s, ticket_id, TicketState.PENDING_USER, actor, "人工已回复，等待用户确认")
         return {"ok": True, "ticket_id": ticket_id, "state": get_ticket(s, ticket_id).state}
 
 
-@app.post("/api/v1/tickets/{ticket_id}/ack")
-def ack_ticket(ticket_id: int, rating: int | None = Query(default=None, ge=1, le=5),
-               principal: Principal = Depends(resolve_principal)):
-    """用户确认解决：RESOLVED → CLOSED（附满意度入库）。"""
+@app.post("/api/v1/tickets/{ticket_id}/human-reply")
+def human_reply(ticket_id: int, req: HumanReplyRequest, principal: Principal = Depends(require_agent)):
+    """人工接管端点（薄壳）：有挂起的 LangGraph 诊断 → resume 原路恢复；否则快速路径。
+
+    - **鉴权**：坐席端点，REQUIRE_AUTH=true 时必须带有效 X-API-Key（且角色为 agent）；
+    - **身份**：actor 取凭据（principal.actor），请求体里的 actor 一律忽略；
+    - **租户**：跨租户工单 404；终态工单 422。
+    - 实现见 `human_reply_impl`（脚本可直接调用，不必绕 HTTP）。
+    """
+    return human_reply_impl(ticket_id, req, principal.actor, principal.tenant)
+
+
+def ack_ticket_impl(ticket_id: int, rating: int | None = None,
+                    tenant: str = db.DEFAULT_TENANT) -> dict:
+    """用户确认解决的**业务实现**（与 `ack_ticket` 端点共用；理由同 `human_reply_impl`）。
+
+    RESOLVED → CLOSED；PENDING_USER → RESOLVED → CLOSED；其他状态 422（状态机红线）。
+    """
     with db.session_scope() as s:
         try:
-            t = get_ticket(s, ticket_id, tenant_id=principal.tenant)
+            t = get_ticket(s, ticket_id, tenant_id=tenant)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         cur = TicketState(t.state)
@@ -293,6 +309,13 @@ def ack_ticket(ticket_id: int, rating: int | None = Query(default=None, ge=1, le
         if rating is not None:
             s.add(db.Review(ticket_id=ticket_id, rating=rating, comment="ack"))
         return {"ok": True, "ticket_id": ticket_id, "state": get_ticket(s, ticket_id).state}
+
+
+@app.post("/api/v1/tickets/{ticket_id}/ack")
+def ack_ticket(ticket_id: int, rating: int | None = Query(default=None, ge=1, le=5),
+               principal: Principal = Depends(resolve_principal)):
+    """用户确认解决（薄壳）：RESOLVED → CLOSED（附满意度入库）。实现见 `ack_ticket_impl`。"""
+    return ack_ticket_impl(ticket_id, rating, principal.tenant)
 
 
 @app.get("/api/v1/admin/escalations")

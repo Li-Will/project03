@@ -12,6 +12,8 @@
     python scripts/init_index.py                       # 首次需建 FAQ 索引
     python scripts/demo_cli.py
 注意：脚本会重建 data/tickets.db + checkpoint（开发演示库，幂等可重复跑）。
+脚本直接调用 `*_impl` 业务函数（不经 HTTP）：端点用 Depends 注入身份，直接调端点会拿到
+Depends 对象——这正是 P0-3 加鉴权后演示脚本崩过一次的原因，回归护栏见 tests/test_api.py。
 """
 from __future__ import annotations
 
@@ -25,7 +27,7 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 from sqlalchemy import select  # noqa: E402
 
 from project03.api.main import HumanReplyRequest  # noqa: E402
-from project03.api.main import ack_ticket, handle_chat, human_reply  # noqa: E402
+from project03.api.main import ack_ticket_impl, handle_chat, human_reply_impl  # noqa: E402
 from project03.biz import sla as sla_mod  # noqa: E402
 from project03.biz.states import TicketState  # noqa: E402
 from project03.biz.tickets import create_ticket, get_or_create_customer, get_ticket_history, update_state  # noqa: E402
@@ -72,14 +74,14 @@ def main() -> None:
     if ticket_id:
         t0 = time.perf_counter()
         print(f"\n▶ 4) 人工接管 → resume 恢复（工单 {ticket_id}）")
-        rr = human_reply(ticket_id, HumanReplyRequest(content="您好，我是人工客服小美，已为您核查：云盘维护已完成，请重试上传。如仍异常我帮您升级。", actor="human"))
+        rr = human_reply_impl(ticket_id, HumanReplyRequest(content="您好，我是人工客服小美，已为您核查：云盘维护已完成，请重试上传。如仍异常我帮您升级。"), actor="human")
         print(f"    state: {rr['state']}  [{(time.perf_counter()-t0)*1000:.0f}ms]")
         with db.session_scope() as s:
             h = get_ticket_history(s, ticket_id)
         print("    审计链:", " → ".join(f"{e['to']}({e['actor']})" for e in h["events"]))
 
         t0 = time.perf_counter()
-        rr2 = ack_ticket(ticket_id, rating=5)
+        rr2 = ack_ticket_impl(ticket_id, rating=5)
         print(f"▶ 5) 用户 5 星满意度 → 工单关闭（{ticket_id}）")
         print(f"    state: {rr2['state']}  [{(time.perf_counter()-t0)*1000:.0f}ms]")
         with db.session_scope() as s:

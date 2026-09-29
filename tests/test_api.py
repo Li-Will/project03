@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import inspect
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -156,3 +158,38 @@ def test_admin_escalations(client):
     assert body["count"] >= 1
     for item in body["items"]:
         assert {"ticket_id", "category", "priority", "created_at"} <= set(item)  # 结构完整可序列化
+
+# ---------- 脚本可直接调用（回归：P0-3 加鉴权后演示脚本崩过一次）----------
+
+def test_impl_entrypoints_avoid_depends_defaults():
+    """业务入口函数的参数默认值里不能出现 `Depends`。
+
+    背景：`human_reply(...)` 加上 `principal: Principal = Depends(require_agent)` 后，
+    **直接调用端点函数拿到的是 Depends 对象**（`'Depends' object has no attribute 'actor'`），
+    `scripts/demo_cli.py` 当场崩——而 pytest 全绿（测试全走 HTTP，绕过了这条路）。
+    纪律：端点保持薄壳（只做鉴权 + 转发），逻辑放 `*_impl`；本用例是这条纪律的结构护栏。
+    """
+    from fastapi.params import Depends as DependsClass
+
+    from project03.api import main as api_main
+
+    for name in ("handle_chat", "human_reply_impl", "ack_ticket_impl"):
+        fn = getattr(api_main, name)
+        for p in inspect.signature(fn).parameters.values():
+            assert not isinstance(p.default, DependsClass), (
+                f"{name} 的参数 {p.name} 用了 Depends，脚本无法直接调用它"
+            )
+
+
+def test_impl_functions_callable_directly(client):
+    """不经 HTTP 真调一次：建单 → human_reply_impl（actor 显式传入）→ ack_ticket_impl。"""
+    from project03.api.main import HumanReplyRequest, ack_ticket_impl, handle_chat, human_reply_impl
+
+    r = handle_chat("会议打不开了，一直报错卡死！", "张三")
+    tid = r["ticket_id"]
+    out = human_reply_impl(tid, HumanReplyRequest(content="人工已处理，请重试。"), actor="坐席甲")
+    assert out["ok"] is True and out["state"] in ("pending_user", "resolved")
+    out2 = ack_ticket_impl(tid, rating=5)
+    assert out2["ok"] is True and out2["state"] == "closed"
+    with db.session_scope() as s:
+        assert get_ticket_history(s, tid)["events"][-1]["actor"] == "customer"
