@@ -7,13 +7,16 @@
 #   docker build --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple -t ticket-agent:0.1.0 .
 #
 # 运行：
-#   docker run --rm -p 8000:8000 ticket-agent:0.1.0                       # 起服务（FAQ 需先建索引，见下）
+#   docker run --rm -p 8000:8000 ticket-agent:0.1.0                       # 起服务；工作台在 http://127.0.0.1:8000/
+#   （FAQ 检索需先建索引，见下；未建索引时寒暄/转人工等链路仍可用）
 #   docker run --rm ticket-agent:0.1.0 python eval/run_eval.py --mode mock # 容器内评测（不依赖索引）
 #   docker volume create ta-data && docker run --rm -v ta-data:/app/data ticket-agent:0.1.0 \
 #     python scripts/init_index.py                                        # 建 FAQ 向量索引（需模型，见下）
 #
 # 设计取舍：
-#   * 两阶段构建：builder 里有 uv/编译器，runtime 只带运行时依赖（不含 pytest/uv）；
+#   * 三阶段构建：frontend(node) → builder(uv) → runtime。运行镜像里**没有 Node、没有 npm、
+#     没有前端源码**，只有打包好的 frontend/dist（0.1 MB 级）—— 镜像不因为"好看"而膨胀；
+#   * builder 里有 uv/编译器，runtime 只带运行时依赖（不含 pytest/uv）；
 #   * 依赖层与源码层分离：改代码不触发重装依赖（lock 不变则缓存命中）；
 #   * 非 root 运行（uid 10001）；`/app/data` 归 app —— 业务库、checkpoint、Qdrant
 #     索引、评测产物都在这里落地，root 建目录会让非 root 进程静默失败；
@@ -26,6 +29,20 @@
 # 基础镜像可覆盖（国内加速器 / 内网仓库）：
 #   --build-arg PYTHON_IMAGE=docker.1ms.run/library/python:3.13-slim
 ARG PYTHON_IMAGE=python:3.13-slim
+ARG NODE_IMAGE=node:22-alpine
+# 国内网络可覆盖：--build-arg NPM_REGISTRY=https://registry.npmmirror.com
+ARG NPM_REGISTRY=https://registry.npmjs.org
+
+# ---------- 阶段 0：前端产物（工作台）----------
+FROM ${NODE_IMAGE} AS frontend
+
+ARG NPM_REGISTRY
+WORKDIR /web
+# 依赖层与源码层分离：只改前端代码时 npm ci 仍然命中缓存
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm config set registry ${NPM_REGISTRY} && npm ci --include=dev --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
 
 # ---------- 阶段 1：依赖与项目安装 ----------
 FROM ${PYTHON_IMAGE} AS builder
@@ -73,6 +90,8 @@ COPY --from=builder --chown=app:app /app/src /app/src
 COPY --chown=app:app scripts ./scripts
 COPY --chown=app:app eval ./eval
 COPY --chown=app:app static ./static
+# 前端产物（只有 dist：运行镜像里没有前端源码，也没有 Node）
+COPY --from=frontend --chown=app:app /web/dist /app/frontend/dist
 COPY --chown=app:app README.md pyproject.toml ./
 # 数据目录归 app：业务库 / checkpoint / Qdrant 索引 / 审计都落这里
 RUN mkdir -p /app/data && chown -R app:app /app/data

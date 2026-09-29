@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.ssr-out/
+.env
+.DS_Store

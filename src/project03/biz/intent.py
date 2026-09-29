@@ -18,6 +18,9 @@ COMPLAINT = "complaint"    # 投诉 → 建单并转人工
 CHAT = "chat"              # 寒暄 → 模板话术
 NEED_HUMAN = "need_human"  # 用户明确要求人工 / 低置信兜底
 
+# 意图枚举的唯一来源：工作台的 /api/v1/meta 直接暴露本元组给前端（前端不另抄一份）
+INTENTS: tuple[str, ...] = (FAQ, TICKET, COMPLAINT, CHAT, NEED_HUMAN)
+
 # 强触发词表（按长度降序匹配避免短词误吞）
 _NEED_HUMAN_KW = ("我要真人", "转人工", "人工介入", "人工处理", "人工回答", "接人工", "别用机器人", "真人来", "叫客服主管来")
 _COMPLAINT_KW = ("投诉", "差评", "太差", "垃圾", "废物", "骗子", "坑人", "气死", "退钱", "赔钱", "讨个说法")

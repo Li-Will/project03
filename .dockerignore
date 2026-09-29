@@ -8,6 +8,11 @@
 
 # 虚拟环境与缓存
 .venv
+# 前端依赖与产物：镜像里由 frontend 阶段自己装自己构建
+# （绝不能写 *.lock —— 会误伤 frontend/package-lock.json，npm ci 就没输入了）
+frontend/node_modules
+frontend/dist
+frontend/.ssr-out
 __pycache__
 *.py[cod]
 .pytest_cache

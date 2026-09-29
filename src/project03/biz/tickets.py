@@ -53,6 +53,13 @@ def log_event(
     )
 
 
+def sla_deadline_for(priority: str):
+    """按优先级算死限（延迟导入 sla：两个模块互相依赖，模块级 import 会成环 ——
+    与 sla.py 对本模块的依赖方式保持一致）。"""
+    from project03.biz.sla import DEADLINES
+    return utcnow() + DEADLINES.get(priority, DEADLINES["P3"])
+
+
 def create_ticket(
     session: Session,
     customer_id: int,
@@ -63,7 +70,15 @@ def create_ticket(
     reason: str = "创建工单",
     tenant_id: str = DEFAULT_TENANT,
 ) -> Ticket:
-    """新单落 NEW 状态 + 首条客户消息 + create 审计事件（带租户归属）。"""
+    """新单落 NEW 状态 + 首条客户消息 + create 审计事件（带租户归属），并**在建单时开始计时**。
+
+    为什么建单就写 SLA 死限（此前只有图内受理节点才写）：
+        投诉 / 低置信 / 高危事件走的是"快速转人工"路径，**不经过图**。
+        如果死限只在受理节点写，这些单的 `sla_deadline` 永远是 NULL，
+        而 `scan_sla` 会 `if t.sla_deadline is None: continue` 跳过它们 ——
+        也就是**最该被 SLA 兜住的单，反而永远不会超时升级**。
+        计时起点与业务事实一致才谈得上 SLA：对客服来说"受理"就是建单的那一刻。
+    """
     ticket = Ticket(
         tenant_id=tenant_id,
         customer_id=customer_id,
@@ -71,6 +86,7 @@ def create_ticket(
         category=category,
         priority=priority,
         state=TicketState.NEW.value,
+        sla_deadline=sla_deadline_for(priority),
     )
     session.add(ticket)
     session.flush()
@@ -140,6 +156,8 @@ def get_ticket_history(session: Session, ticket_id: int, tenant_id: str | None =
         "state": ticket.state,
         "assignee": ticket.assignee,
         "created_at": ticket.created_at.isoformat(),
+        # 死限：坐席看详情必须知道"还剩多久"（工作台据此画 SLA 条；不写死限的单为 None）
+        "sla_deadline": ticket.sla_deadline.isoformat() if ticket.sla_deadline else None,
         "messages": [
             {"sender": m.sender, "content": m.content, "source": m.source, "at": m.created_at.isoformat()}
             for m in messages
@@ -157,13 +175,20 @@ _CLOUD_KW = ("云盘", "上传", "下载", "同步", "分享", "容量", "存储
 _MEET_KW = ("会议", "开会", "摄像头", "麦克风", "屏幕共享", "录制", "字幕", "入会", "视频", "音频")
 _P1_KW = ("支付", "扣款", "扣钱", "乱扣", "多扣", "扣了两次", "账号被盗", "数据丢失", "丢了", "无法登录", "紧急", "立刻")
 
+# 品类枚举的唯一来源（工作台 /api/v1/meta 暴露它，前端不另抄一份）
+CAT_CLOUD = "云盘服务"
+CAT_MEET = "会议支持"
+CAT_OTHER = "综合"
+CATEGORIES: tuple[str, ...] = (CAT_CLOUD, CAT_MEET, CAT_OTHER)
+
+
 def categorize_ticket(text: str) -> str:
     """产品线品类：按关键词归属，都不中给综合。"""
     if any(k in text for k in _MEET_KW):
-        return "会议支持"
+        return CAT_MEET
     if any(k in text for k in _CLOUD_KW):
-        return "云盘服务"
-    return "综合"
+        return CAT_CLOUD
+    return CAT_OTHER
 
 
 def prioritize_ticket(text: str) -> str:

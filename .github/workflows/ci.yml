@@ -61,6 +61,39 @@ jobs:
           path: eval/results/
           if-no-files-found: ignore
 
+  frontend:
+    name: 前端构建与 SSR 烟测
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 按 lock 安装前端依赖
+        working-directory: frontend
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: 构建工作台
+        working-directory: frontend
+        run: npm run build
+
+      - name: 产物校验（壳页与静态资源必须存在）
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          test -f dist/index.html
+          test -f dist/favicon.svg
+          ls dist/assets/*.js dist/assets/*.css
+          grep -q '/assets/' dist/index.html
+
+      - name: SSR 烟测（兜白屏，不代替人工验收）
+        working-directory: frontend
+        run: npm run test:smoke
+
   docker:
     name: 镜像可构建
     runs-on: ubuntu-latest
@@ -96,6 +129,12 @@ jobs:
           curl -fsS -X POST http://127.0.0.1:8000/api/v1/chat \
             -H 'Content-Type: application/json' -d '{"text":"你好"}'
           echo
+          echo "--- 工作台壳页（镜像里只有 dist，没有 Node）---"
+          curl -fsS http://127.0.0.1:8000/ | head -c 200; echo
+          curl -fsS http://127.0.0.1:8000/ | grep -q '/assets/' \
+            || { echo "工作台产物没有进镜像"; docker rm -f smoke; exit 1; }
+          docker exec smoke sh -c 'command -v node || echo NO_NODE_IN_IMAGE'
+          docker exec smoke test -d /app/frontend/dist
           echo "--- 非 root 用户（必须不是 root）---"
           who=$(docker exec smoke id -un)
           echo "$who"

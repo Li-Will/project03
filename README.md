@@ -4,9 +4,10 @@
 
 | 项 | 内容 |
 |---|---|
-| 技术栈 | LangGraph + LangChain + FastAPI + Qdrant（本地）+ SQLite（业务库 + Checkpoint）+ OpenAI 兼容 LLM（**云端 / 离线规则双模式**）+ Docker（两阶段 / 非 root）+ GitHub Actions CI |
+| 技术栈 | LangGraph + LangChain + FastAPI + Qdrant（本地）+ SQLite（业务库 + Checkpoint）+ OpenAI 兼容 LLM（**云端 / 离线规则双模式**）+ Vue 3 工作台（自研设计系统，零 UI 组件库）+ Docker（三阶段 / 非 root）+ GitHub Actions CI |
 | 定位 | **真实业务流程**：工单状态机 + 规则/Agent 混合决策 + 人工接管闭环（HITL）+ SLA 运营指标 + 三层评估体系；**最小生产形态**：鉴权与租户隔离 + 容器化交付 |
-| 代码规模 | src 布局，**80 项 pytest 全绿**；`prod` 逻辑零 LLM 依赖（规则确定性，可审计）|
+| 代码规模 | src 布局，**108 项 pytest 全绿**；`prod` 逻辑零 LLM 依赖（规则确定性，可审计）|
+| 界面 | 浏览器工作台（5 视图：在线客服 / 待办队列 / 工单列表 / 状态机 / 运营看板），FastAPI 同端口托管；旧的单文件演示页保留在 `/static/demo.html` |
 | 评测 | **99 条**人工标注 gold set（含 4 条知识库外负例），mock / snapshot / live 三模式，**live 全项验收通过**（见下）|
 
 ---
@@ -49,6 +50,7 @@ flowchart TD
 - **每个请求先归租户**：`tenant_id` 贯穿工单/客户/审计，跨租户访问一律 404（不泄露「这单存在」）；同名客户在不同租户是两条记录。
 - **评测可复现**：mock / snapshot / live 三模式，snapshot 重放 live 快照，数字完全一致。
 - **不是所有改动都值得写进简历**：混合检索（BM25）实测**没有增量**，代码留着兜底、简历里不夸大成提升项（见「检索升级」一节）。
+- **前端不复制业务规则**：状态机迁移表、SLA 时限与阈值、枚举全部来自 `/api/v1/meta`（后端 `states.TRANSITIONS` / `sla.DEADLINES` 派生），界面只决定「哪个值配哪种颜色」。
 
 ---
 
@@ -144,15 +146,51 @@ human_reply_cross_tenant=404     ticket_detail_cross_tenant=404     admin_queue_
 
 ---
 
+## 浏览器工作台（M5）
+
+原来只有 `static/demo.html`（M4 的单文件演示页，**保留不变**）。现在多了正式的**客服工单工作台**：Vue 3 + Vite，**零 UI 组件库**，首屏 **118 KB JS（gzip 45 KB）+ 13 KB CSS**。
+
+| 视图 | 给谁看 | 看什么 |
+|---|---|---|
+| 在线客服 | 用户 | 对话 + 意图/置信度可见 + SSE 诊断轨迹 + 工单卡 + 满意度评价 |
+| 待办队列 | 坐席 | 转人工 / 超时升级的工单，按死限升序 + 剩余时间条 + 已等待时长 |
+| 工单列表 | 坐席 | 按状态 / 优先级 / 排序筛选，点开进详情（消息流 + 状态迁移审计时间线）|
+| 状态机 | 所有人 | 8 态 + 合法迁移（**从 `/api/v1/meta` 渲染，不是画上去的**）+ 当前分布 |
+| 运营看板 | 运营 | 状态 / 优先级 / 品类分布 + SLA 分桶 + 满意度分布 |
+
+三条设计纪律：
+
+- **前端不复制业务规则**：状态机迁移表、SLA 时限与临近阈值、置信度阈值、全部枚举都由 `/api/v1/meta` 提供；
+  规则改一处、界面跟着改，不存在「文档说得对、界面做另一套」。
+- **状态真值不在前端**：每次操作后回查服务端，不做乐观更新 —— 在一个「非法迁移会被 422 拒绝」的系统里，
+  乐观更新会直接骗人。
+- **界面语义不比 API 更宽松**：不用 `StaticFiles(html=True)`（它把任意未匹配路径都渲染成 index.html，吞掉 404 语义）；
+  产物缺失时返回**构建指引页（200）**而非 500 —— 让「没构建前端」与「服务坏了」可区分。
+  坐席凭据只进 `sessionStorage`，关标签页即失效。
+
+顺带修掉两个后端真问题 —— 都属于「只有把界面做出来才会暴露」的那一类：
+
+- **快速转人工的工单没有 SLA 死限**：死限原先只在图内受理节点写，而投诉 / 低置信 / 高危事件走 `_escalate_fast`（不经过图）
+  → 这些单 `sla_deadline` 永远为 NULL，被 `scan_sla` 的 `if t.sla_deadline is None: continue` 跳过 ——
+  **最该被 SLA 兜住的单，反而永远不会超时升级**。现在建单即计时（`create_ticket` 写死限）。
+- **escalated 被判成「不参与 SLA 计时」**：于是看板显示「没有超时」，而队列里 3 张超时单正红着。
+  现在 escalated 算超时，另用 `auto_upgrade_pending` 表示「调度器下一趟会真的动它们」的数量。
+
+零 UI 依赖的代价只是一个内联 SVG 图标文件（40 个图标）。自动化只到 **SSR 烟测**（6 个场景渲染成字符串）——
+**它兜白屏级错误，不代替人工验收**：布局、动效、真实数据下的观感必须人打开看。
+
+---
+
 ## Docker 与 CI（P0-1）
 
-- 两阶段构建（构建工具不进产线镜像）+ 非 root（uid 10001）+ `HEALTHCHECK` 用标准库 `urllib` 探 `/health/live`；
-- 镜像 **689 MB**（`ticket-agent:0.1.0`）；**不预置 embedding 模型**（起服务不需要，留给部署时挂载 HF 缓存，避免镜像静默膨胀几百 MB）；
-- CI 双 job：`test`（80 用例 + mock 评测 99 条，**零密钥确定性**）+ `docker`（每次真构建镜像并冒烟：live 探针 / 寒暄链路 / 非 root 校验）。
+- **三阶段构建**（`frontend`(node) → `builder`(uv) → `runtime`）：运行镜像里**没有 Node、没有 npm、没有前端源码**，只有打包好的 `frontend/dist`；构建工具不进产线镜像；非 root（uid 10001）+ `HEALTHCHECK` 用标准库 `urllib` 探 `/health/live`；
+- 镜像 **690 MB**（`ticket-agent:0.2.0`，前端产物仅 0.13 MB）；**不预置 embedding 模型**（起服务不需要，留给部署时挂载 HF 缓存，避免镜像静默膨胀几百 MB）；
+- CI 三 job：`test`（108 用例 + mock 评测 99 条，**零密钥确定性**）+ `frontend`（npm ci → 构建 → 产物校验 → SSR 烟测）+ `docker`（每次真构建镜像并冒烟：live 探针 / 寒暄链路 / **工作台壳页** / 镜像内无 Node / 非 root 校验）。
 
 ```bash
-docker build -t ticket-agent:0.1.0 .
-docker run --rm -p 8000:8000 ticket-agent:0.1.0
+# 国内网络可加：--build-arg NPM_REGISTRY=https://registry.npmmirror.com
+docker build -t ticket-agent:0.2.0 .
+docker run --rm -p 8000:8000 ticket-agent:0.2.0     # 工作台在 http://127.0.0.1:8000/
 ```
 
 ---
@@ -177,9 +215,12 @@ python eval/run_eval.py --mode live
 python eval/run_eval.py --mode snapshot
 
 # 4) 测试
-python -m pytest -q        # 80 passed
+python -m pytest -q        # 108 passed
 
-# 5) 启动 API + 演示页（http://127.0.0.1:8000/static/demo.html）
+# 5) 构建工作台（可选：不构建也能用全部 API，根路径会返回构建指引页）
+cd frontend && npm install --include=dev && npm run build && cd ..
+
+# 6) 启动服务：工作台 http://127.0.0.1:8000/ · 旧演示页 /static/demo.html · /docs
 uv run uvicorn project03.api.main:app --port 8000
 ```
 
@@ -195,9 +236,14 @@ uv run uvicorn project03.api.main:app --port 8000
 | `POST /api/v1/tickets/{id}/human-reply` | 人工接管：resume 恢复挂起图 / 快速路径；终态 422 |
 | `POST /api/v1/tickets/{id}/ack?rating=5` | 用户确认解决（RESOLVED→CLOSED）+ 满意度入库 |
 | `GET /api/v1/admin/escalations` | 管理面升级队列（按 SLA 死限升序）|
+| `GET /api/v1/meta` | **业务元数据**：状态机迁移表 / SLA 时限与阈值 / 枚举（工作台的规则来源，无鉴权）|
+| `GET /api/v1/tickets` | 坐席工单列表（`state` / `priority` / `order` / `limit` 筛选；非法状态 400）|
+| `GET /api/v1/admin/me` | 身份回显（tenant / actor / role / key 指纹）——前端据此收敛可操作项 |
+| `GET /api/v1/admin/overview` | 运营聚合：状态·优先级·品类分布 / SLA 分桶 / 满意度 / 待办队列 |
 | `GET /api/v1/health/live` / `ready` | 存活探针 / 就绪探针（DB + Qdrant）|
+| `GET /` · `/assets/{path}` · `/favicon.svg` | 工作台壳页 / 前端产物 / 图标（产物缺失时 `/` 返回构建指引页 200）|
 
-> 坐席端点（`human-reply` / `admin/*`）在 `REQUIRE_AUTH=true` 时要求 `X-API-Key`；用户侧端点不强制 —— 见「鉴权与租户」。
+> 坐席端点（`human-reply` / `admin/*` / 工单列表）在 `REQUIRE_AUTH=true` 时要求 `X-API-Key`；用户侧端点（`/chat`、`/ack`、工单详情）与 `/meta` 不强制 —— 见「鉴权与租户」。
 
 ---
 
@@ -211,12 +257,15 @@ project03/
 │   ├── db/             # SQLite 五表 + 轻量迁移（补租户列 / 放宽唯一约束）+ 种子
 │   ├── rag/            # 检索：dense + 字符 bigram BM25 → RRF → 级联 Cross-Encoder 精排
 │   ├── gql/            # LangGraph 工单图（9 节点 + interrupt/resume）
-│   └── api/            # FastAPI + auth（X-API-Key 坐席鉴权 / 租户解析）
+│   └── api/            # FastAPI + auth（坐席鉴权 / 租户解析）+ workbench（元数据与运营读端点）
 ├── scripts/            # init_index 建索引 / demo_cli 演示 / tune_threshold 阈值校准
 ├── eval/               # gold_set（99 条）/ run_eval（三模式）/ judge（规则版）
-├── static/demo.html    # 浏览器演示页（SSE 流式 + 工单状态可视化 + 人工接管模拟）
+├── static/demo.html    # 旧的单文件演示页（M4，保留）
+├── frontend/           # 工作台（Vue 3 + Vite，零 UI 组件库）
+│   ├── src/            # store / api / meta（业务规则只从 /api/v1/meta 读）+ 15 个组件
+│   └── scripts/        # ssr-build + ssr-smoke（SSR 烟测，进 CI）
 ├── Dockerfile / .github/workflows/ci.yml
-└── tests/              # 80 用例：状态机 / 意图 / FAQ / API / 图 / SLA / 评测 / 鉴权 / 安全闸
+└── tests/              # 108 用例：状态机 / 意图 / FAQ / API / 图 / SLA / 评测 / 鉴权 / 安全闸 / 工作台端点 / 前端托管契约
 ```
 
 ---
@@ -232,6 +281,6 @@ project03/
 
 ## 里程碑
 
-M0 环境与数据 ✅ → M1 MVP（意图路由 + FAQ + 工单雏形）✅ → M2 完整版（图诊断 + 转人工 + SLA + 演示页）✅ → M3 评估体系 ✅ → M4 工程化与面试弹药 ✅ → **P0-1 容器化 + CI ✅** → **P0-2 检索升级（aliases / 混合检索 / 级联精排 / 阈值校准）✅** → **P0-3 最小鉴权 + 租户 + 高危前置闸 ✅**
+M0 环境与数据 ✅ → M1 MVP（意图路由 + FAQ + 工单雏形）✅ → M2 完整版（图诊断 + 转人工 + SLA + 演示页）✅ → M3 评估体系 ✅ → M4 工程化与面试弹药 ✅ → **P0-1 容器化 + CI ✅** → **P0-2 检索升级（aliases / 混合检索 / 级联精排 / 阈值校准）✅** → **P0-3 最小鉴权 + 租户 + 高危前置闸 ✅** → **M5 浏览器工作台（5 视图 + SSR 烟测 + 三阶段镜像）✅**
 
 详细设计见 [docs/项目计划书.md](docs/项目计划书.md)。

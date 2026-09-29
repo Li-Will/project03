@@ -19,13 +19,14 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from project03 import __version__
 from project03.api.auth import Principal, require_agent, require_staff, resolve_principal, warn_if_auth_disabled
+from project03.api import workbench
 from project03.biz import faq as faq_biz
 from project03.biz import intent as intent_biz
 from project03.biz import safety as safety_biz
@@ -64,6 +65,9 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Ticket Agent", version=__version__, lifespan=lifespan)
+
+# 工作台读端点（/api/v1/meta、/admin/me、/tickets 列表、/admin/overview）
+app.include_router(workbench.router)
 
 
 @app.middleware("http")
@@ -358,3 +362,64 @@ except NameError:
     _static_dir = None
 if _static_dir and _static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+# ---------- 工作台前端托管（M5）----------
+# 三条纪律（与 project02 同源，都是"不能让界面撒谎"的延伸）：
+#  1) **产物缺失 → 降级为构建指引页，HTTP 200**：没装 Node 的环境照样能用全部 API，
+#     返回 500 只会让"没构建前端"看起来像"服务坏了"；
+#  2) **绝不用 StaticFiles(html=True)**：它会把任意未匹配路径都渲染成 index.html，
+#     直接吞掉 404 语义 —— 本项目的跨租户访问一律 404，界面上却"什么都能打开"，自相矛盾；
+#  3) 自写 /assets 路由：路径穿越一律 404；带内容哈希的产物长缓存，index.html 不缓存。
+WEB_DIR = Path(__file__).resolve().parents[3] / "frontend" / "dist"
+
+_BUILD_HINT = """<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Ticket Agent · 工作台未构建</title>
+<style>
+ body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#0e1117;color:#e6ecf7;
+      margin:0;padding:48px;line-height:1.7}
+ h1{font-size:20px;margin:0 0 8px} code{background:#1b2130;padding:2px 6px;border-radius:5px;font-size:13px}
+ pre{background:#141924;border:1px solid #262e40;border-radius:10px;padding:14px;overflow:auto;font-size:13px}
+ a{color:#4f86ff} .dim{color:#9aa7c0;font-size:13px}
+</style></head><body>
+<h1>工作台前端尚未构建</h1>
+<p class="dim">API 全部可用（<a href="/docs">/docs</a> · <a href="/api/v1/meta">/api/v1/meta</a> ·
+   <a href="/api/v1/health/live">/health/live</a>），只是浏览器界面还没打包。</p>
+<pre>cd frontend
+npm install --include=dev
+npm run build        # 产物落到 frontend/dist，刷新本页即可</pre>
+<p class="dim">也可以 <code>npm run dev</code> 起 Vite 开发服务器（默认 5173，代理到本服务）。</p>
+</body></html>"""
+
+
+def _web_ready() -> bool:
+    return (WEB_DIR / "index.html").is_file()
+
+
+@app.get("/", include_in_schema=False)
+def workbench() -> HTMLResponse:
+    """工作台入口；产物缺失时给构建指引（200），而不是 500。"""
+    if not _web_ready():
+        return HTMLResponse(_BUILD_HINT)
+    return HTMLResponse((WEB_DIR / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def workbench_favicon():
+    f = WEB_DIR / "favicon.svg"
+    if not f.is_file():
+        raise HTTPException(status_code=404, detail="favicon 未构建")
+    return FileResponse(f)
+
+
+@app.get("/assets/{asset_path:path}", include_in_schema=False)
+def workbench_asset(asset_path: str):
+    """静态产物：路径穿越一律 404；带哈希的文件长缓存，其余短缓存。"""
+    base = WEB_DIR / "assets"
+    target = (base / asset_path).resolve()
+    if not str(target).startswith(str(base.resolve())) or not target.is_file():
+        raise HTTPException(status_code=404, detail="资源不存在")
+    # Vite 产物形如 index-B2qi8ukV.js：文件名里有内容哈希 → 可以 immutable 长缓存；
+    # 没有哈希的（理论上不该有）用短缓存，避免升级后拿到旧文件。
+    hashed = "-" in target.stem   # index-B2qi8ukV.js → stem 含内容哈希
+    headers = {"Cache-Control": "public, max-age=31536000, immutable"} if hashed else {"Cache-Control": "no-cache"}
+    return FileResponse(target, headers=headers)
