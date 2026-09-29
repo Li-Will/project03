@@ -1,0 +1,30 @@
+# 构建上下文瘦身：只保留构建镜像真正需要的东西
+# （实测：不加本文件时 .venv / data / eval/results 会全部进上下文）
+
+# 版本控制与 CI
+.git
+.github
+.gitignore
+
+# 虚拟环境与缓存
+.venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+
+# 运行产物与数据（镜像里由 app 用户按需创建）
+data
+eval/results
+eval/snapshots
+*.db
+*.sqlite3
+
+# 密钥与本地配置
+.env
+.env.local
+
+# 文档（README.md 例外——pyproject 的 readme 字段需要它）
+docs
+*.md
+!README.md

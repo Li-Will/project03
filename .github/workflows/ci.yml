@@ -1,0 +1,87 @@
+name: CI
+
+# 设计原则：**CI 结果只取决于代码**。
+# 不接真实 LLM、不依赖向量索引与外部服务（测试全部注入 fake 检索器 / 临时库），
+# 因此不需要任何仓库密钥，也不会因为模型下载或网络抖动而随机飘红。
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QDRANT_MODE: local
+
+jobs:
+  test:
+    name: 测试（离线确定性路径）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.12.5"
+          enable-cache: true
+
+      - name: 按 lock 安装依赖
+        run: uv sync --frozen --dev
+
+      - name: 单元测试（53 用例，全部离线：fake 检索器 + 临时库）
+        run: uv run pytest -q
+
+      - name: 评测链路冒烟（mock 80 条，离线确定性）
+        run: uv run python eval/run_eval.py --mode mock
+
+      - name: 上传评测产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: eval/results/
+          if-no-files-found: ignore
+
+  docker:
+    name: 镜像可构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dockerfile 会腐化 —— 让 CI 每次都真构建一次（不推送镜像）
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 构建镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ticket-agent:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 冒烟：镜像能起服务 + 寒暄链路可用（不依赖向量索引）
+        run: |
+          docker run -d --name smoke -p 8000:8000 ticket-agent:ci
+          ok=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/v1/health/live > /dev/null; then
+              echo "健康检查通过"; ok=1; break
+            fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then echo "容器未就绪"; docker logs smoke; exit 1; fi
+          curl -fsS http://127.0.0.1:8000/api/v1/health/live
+          echo
+          curl -fsS -X POST http://127.0.0.1:8000/api/v1/chat \
+            -H 'Content-Type: application/json' -d '{"text":"你好"}'
+          echo
+          echo "--- 非 root 用户 ---"
+          docker exec smoke id -un
+          docker rm -f smoke
