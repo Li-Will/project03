@@ -24,11 +24,11 @@ GOLD = run_eval.load_gold()
 
 
 def test_gold_set_shape():
-    """80 条、四类分布、关键字段齐备。"""
+    """99 条、五类分布、关键字段齐备（P0-2 扩容：+15 条口语变体 + 4 条负例）。"""
     from collections import Counter
 
     c = Counter(it["cls"] for it in GOLD)
-    assert c == {"intent": 30, "faq": 25, "diagnose": 15, "escalate": 10}
+    assert c == {"intent": 30, "faq": 40, "diagnose": 15, "escalate": 10, "faq_negative": 4}
     for it in GOLD:
         assert it["text"].strip()
         if it["cls"] == "intent":
@@ -36,6 +36,10 @@ def test_gold_set_shape():
         if it["cls"] == "faq":
             assert it["gold_id"].startswith(("cd-", "mn-"))
             assert it["direct"] is True
+        if it["cls"] == "faq_negative":
+            # 知识库外诉求：显式标注"期望不直答 + 期望转人工"，口径可复核
+            assert it["expect_direct"] is False
+            assert it["expect_escalate"] is True
         if it["cls"] in ("diagnose", "escalate"):
             assert "escalate" in it and isinstance(it["escalate"], bool)
         if it["cls"] == "diagnose":
@@ -46,10 +50,11 @@ def test_gold_set_shape():
 def test_mock_acceptance_lines():
     """计划书验收线在 mock 模式必须全绿（逻辑链路自检）。"""
     m = run_eval.main(mode="mock", write=False)
-    assert m["n"] == 80
+    assert m["n"] == 99
     assert m["intent_acc"] >= 0.90, f"意图准确率 {m['intent_acc']} < 0.90"
     assert m["faq_resolved"] >= 0.85, f"FAQ 解决率 {m['faq_resolved']} < 0.85"
     assert m["faq_cite_hit_rate"] >= 0.999, f"引用命中率 {m['faq_cite_hit_rate']} < 100%"
+    assert m["faq_neg_blocked"] >= 0.999, f"负例拦截率 {m['faq_neg_blocked']} < 100%"
     assert m["escalate_f1"] >= 0.85, f"转人工 F1 {m['escalate_f1']} < 0.85"
     assert m["diag_cat_acc"] >= 0.90, f"诊断分类 {m['diag_cat_acc']}"
     assert m["diag_pri_acc"] >= 0.90, f"诊断定级 {m['diag_pri_acc']}"

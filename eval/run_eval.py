@@ -132,6 +132,18 @@ def run_item(item: dict, searcher, records: list[dict], snapshot_log: dict) -> N
         rec["ok"] = bool(r.direct) and hit
         snapshot_log.setdefault("by_query", {})[item["text"]] = r.citations or []
 
+    elif cls == "faq_negative":
+        # 知识库外的诉求（赔付/议价/线下/竞品比较）：理想行为 = 不给具体答案，
+        # 由入口层转人工 —— "该转不转是事故"，负例用来量化"不该答的时候会不会答"
+        t1 = time.perf_counter()
+        r = faq_biz.answer_faq(item["text"])
+        rec["ms"] = (time.perf_counter() - t1) * 1000.0
+        rec["direct"] = bool(r.direct)
+        rec["top_conf"] = round(float(r.confidence), 4)
+        rec["cite_ids"] = [c["id"] for c in r.citations]
+        rec["ok"] = not bool(r.direct)
+        snapshot_log.setdefault("by_query", {})[item["text"]] = r.citations or []
+
     else:  # diagnose / escalate：走 LangGraph 工单图（真实决策链）
         t1 = time.perf_counter()
         res = gql.run_ticket_graph(item["text"], customer_name="评测用户")
@@ -161,7 +173,8 @@ def run_item(item: dict, searcher, records: list[dict], snapshot_log: dict) -> N
 
 def compute_metrics(records: list[dict]) -> dict:
     m = {"n": len(records)}
-    by_cls = {c: [r for r in records if r["cls"] == c] for c in ("intent", "faq", "diagnose", "escalate")}
+    by_cls = {c: [r for r in records if r["cls"] == c]
+              for c in ("intent", "faq", "faq_negative", "diagnose", "escalate")}
 
     for cls in by_cls:
         items = by_cls[cls]
@@ -178,6 +191,11 @@ def compute_metrics(records: list[dict]) -> dict:
     m["faq_direct_n"] = direct_n
     m["faq_resolved"] = round(sum(1 for r in faqs if r["ok"]) / max(len(faqs), 1), 4)
     m["faq_cite_hit_rate"] = round(sum(1 for r in faqs if r["hit"]) / max(direct_n, 1), 4)
+
+    negs = by_cls["faq_negative"]
+    m["faq_neg_n"] = len(negs)
+    # 负例拦截率：知识库外诉求中"没有给出具体答案"的比例（越高越安全）
+    m["faq_neg_blocked"] = round(sum(1 for r in negs if r["ok"]) / max(len(negs), 1), 4)
 
     esc_items = by_cls["diagnose"] + by_cls["escalate"]
     tp = sum(1 for r in esc_items if r["ok"] and r.get("predict_escalate") and r["gold"])
@@ -206,13 +224,20 @@ def _fmt_ms(x: float) -> str:
 
 def render_md(mode: str, gold: list[dict], records: list[dict], m: dict, ts: str) -> str:
     L = []
-    L.append(f"# M3 评测报告（mode={mode} · {ts} · gold set {m['n']} 条）\n")
+    from project03.config import get_settings as _gs
+    _st = _gs()
+    L.append(f"# M3 评测报告（mode={mode} · {ts} · gold set {m['n']} 条）")
+    L.append("")
+    L.append(f"> 检索配置：index_fields=`{_st.faq_index_fields}` · 混合检索(BM25)=`{_st.use_bm25}` · "
+             f"精排=`{_st.use_rerank}` · 阈值 direct={_st.conf_direct} / hint={_st.conf_hint}")
+    L.append("")
     L.append("## 1. 总览")
     L.append("| 指标 | 值 | 验收 |")
     L.append("|---|---|---|")
     L.append(f"| 意图准确率 | {m['intent_acc'] * 100:.1f}% ({sum(1 for r in records if r['cls']=='intent' and r['ok'])}/{m['intent_n']}) | ≥90% |")
     L.append(f"| FAQ 解决率 | {m['faq_resolved'] * 100:.1f}% ({sum(1 for r in records if r['cls']=='faq' and r['ok'])}/{m['faq_n']}) | ≥85% |")
     L.append(f"| 引用命中率（直答类）| {m['faq_cite_hit_rate'] * 100:.1f}% ({sum(1 for r in records if r['cls']=='faq' and r['hit'])}/{m['faq_direct_n']}) | 100% |")
+    L.append(f"| **负例拦截率**（知识库外诉求不直答）| {m['faq_neg_blocked'] * 100:.1f}% ({sum(1 for r in records if r['cls']=='faq_negative' and r['ok'])}/{m['faq_neg_n']}) | 越高越好 |")
     L.append(f"| 转人工 F1 | {m['escalate_f1']:.4f}（P {m['escalate_precision']:.3f} / R {m['escalate_recall']:.3f}，TP {m['escalate_tp']} / FP {m['escalate_fp']} / FN {m['escalate_fn']}）| ≥0.85 |")
     L.append(f"| 诊断分类准确率 | {m['diag_cat_acc'] * 100:.1f}% | — |")
     L.append(f"| 诊断定级准确率 | {m['diag_pri_acc'] * 100:.1f}% | — |")
@@ -230,7 +255,7 @@ def render_md(mode: str, gold: list[dict], records: list[dict], m: dict, ts: str
     bad = [r for r in records if not r["ok"]]
     if bad:
         for r in bad:
-            if r["cls"] == "faq":
+            if r["cls"] in ("faq", "faq_negative"):
                 line = f"- {r['id']} [{r['cls']}] 「{r['text']}」→ direct={r.get('direct')} top={r.get('top_conf')} cites={r.get('cite_ids')}（gold={r.get('gold')}）"
             elif r["cls"] == "intent":
                 line = f"- {r['id']} [{r['cls']}] 「{r['text']}」→ {r.get('predict')}（gold={r.get('gold')}）"
@@ -300,6 +325,7 @@ def main(mode: str = "live", write: bool = True) -> dict:
             json.dumps({"metrics": m, "records": records}, ensure_ascii=False, indent=1), encoding="utf-8")
 
     print(f"mode={mode} n={m['n']} | intent_acc={m['intent_acc']:.3f} faq_resolved={m['faq_resolved']:.3f} "
+          f"neg_blocked={m['faq_neg_blocked']:.3f} "
           f"cite_hit={m['faq_cite_hit_rate']:.3f} esc_f1={m['escalate_f1']:.4f} (tp{m['escalate_tp']}/fp{m['escalate_fp']}/fn{m['escalate_fn']}) "
           f"cat={m['diag_cat_acc']:.3f} pri={m['diag_pri_acc']:.3f} quality={m['quality_ok']}/25")
     if write:

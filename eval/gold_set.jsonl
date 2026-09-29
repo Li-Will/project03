@@ -78,3 +78,22 @@
 {"id": "e-08", "cls": "escalate", "text": "怎么给分享链接设置密码", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "cd-22"}
 {"id": "e-09", "cls": "escalate", "text": "开会时怎么共享屏幕", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "mn-18"}
 {"id": "e-10", "cls": "escalate", "text": "云盘文件怎么批量下载", "escalate": false, "note": "有标准答案→不应转人", "expect_id": "cd-37"}
+{"id": "f-26", "cls": "faq", "text": "视频一直转圈", "gold_id": "mn-04", "direct": true, "note": "alias 口语变体（升级前报告点名的检索误配案例）"}
+{"id": "f-27", "cls": "faq", "text": "文件传一半断了", "gold_id": "cd-07", "direct": true, "note": "alias 口语变体"}
+{"id": "f-28", "cls": "faq", "text": "下不动", "gold_id": "cd-10", "direct": true, "note": "alias 口语变体（超短查询）"}
+{"id": "f-29", "cls": "faq", "text": "两边文件对不上", "gold_id": "cd-13", "direct": true, "note": "alias 口语变体"}
+{"id": "f-30", "cls": "faq", "text": "怎么关掉自动扣费", "gold_id": "cd-28", "direct": true, "note": "alias 口语变体"}
+{"id": "f-31", "cls": "faq", "text": "验证码一直不来", "gold_id": "cd-31", "direct": true, "note": "alias 口语变体"}
+{"id": "f-32", "cls": "faq", "text": "磁盘已满提示", "gold_id": "cd-04", "direct": true, "note": "alias 口语变体（症状描述）"}
+{"id": "f-33", "cls": "faq", "text": "密码忘了", "gold_id": "cd-32", "direct": true, "note": "alias 口语变体（超短查询）"}
+{"id": "f-34", "cls": "faq", "text": "一直进不去", "gold_id": "mn-03", "direct": true, "note": "alias 口语变体（超短查询）"}
+{"id": "f-35", "cls": "faq", "text": "陌生人进了我的会", "gold_id": "mn-36", "direct": true, "note": "alias 口语变体"}
+{"id": "f-36", "cls": "faq", "text": "声音从哪出来怎么调", "gold_id": "mn-11", "direct": true, "note": "alias 口语变体（升级前报告点名的语义偏斜案例）"}
+{"id": "f-37", "cls": "faq", "text": "用量统计在哪看", "gold_id": "cd-05", "direct": true, "note": "alias 口语变体"}
+{"id": "f-38", "cls": "faq", "text": "自动生成会议记录", "gold_id": "mn-38", "direct": true, "note": "alias 口语变体"}
+{"id": "f-39", "cls": "faq", "text": "分享链接多久过期", "gold_id": "cd-19", "direct": true, "note": "alias 口语变体"}
+{"id": "f-40", "cls": "faq", "text": "把陌生人踢出去", "gold_id": "mn-35", "direct": true, "note": "alias 口语变体"}
+{"id": "n-01", "cls": "faq_negative", "text": "我的东西没了，你们怎么赔", "expect_direct": false, "expect_escalate": true, "note": "知识库外（赔付诉求）→ 不该直答"}
+{"id": "n-02", "cls": "faq_negative", "text": "能不能便宜点，我想砍价", "expect_direct": false, "expect_escalate": true, "note": "知识库外（议价诉求）→ 不该直答"}
+{"id": "n-03", "cls": "faq_negative", "text": "你们公司地址在哪，我要上门", "expect_direct": false, "expect_escalate": true, "note": "知识库外（线下诉求）→ 不该直答"}
+{"id": "n-04", "cls": "faq_negative", "text": "我朋友说你们家比别家贵，你怎么解释", "expect_direct": false, "expect_escalate": true, "note": "知识库外（竞品比较）→ 不该直答"}
